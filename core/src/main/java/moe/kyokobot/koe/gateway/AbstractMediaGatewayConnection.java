@@ -1,7 +1,6 @@
 package moe.kyokobot.koe.gateway;
 
 import io.netty.bootstrap.Bootstrap;
-import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInitializer;
@@ -56,10 +55,15 @@ public abstract class AbstractMediaGatewayConnection implements MediaGatewayConn
                                           @NotNull VoiceServerInfo voiceServerInfo,
                                           int version) {
         try {
+            var endpoint = voiceServerInfo.getEndpoint();
+
+            if (connection.getOptions().isEnableWSSPortOverride()) {
+                endpoint = stripPort80(endpoint);
+            }
+
             this.connection = Objects.requireNonNull(connection);
             this.voiceServerInfo = Objects.requireNonNull(voiceServerInfo);
-            this.websocketURI = new URI(String.format("wss://%s/?v=%d",
-                    voiceServerInfo.getEndpoint().replace(":80", ""), version));
+            this.websocketURI = new URI(String.format("wss://%s/?v=%d", endpoint, version));
             this.bootstrap = NettyBootstrapFactory.socket(connection.getOptions())
                     .handler(new WebSocketInitializer());
             this.sslContext = SslContextBuilder.forClient().build();
@@ -123,10 +127,6 @@ public abstract class AbstractMediaGatewayConnection implements MediaGatewayConn
 
     protected abstract void handlePayload(JsonObject object);
 
-    protected void handleBinaryPayload(ByteBuf buffer) {
-        // no-op
-    }
-
     protected void onClose(int code, @Nullable String reason, boolean remote) {
         if (!closed) {
             closed = true;
@@ -139,16 +139,12 @@ public abstract class AbstractMediaGatewayConnection implements MediaGatewayConn
                     case CloseCode.UNKNOWN_OPCODE:
                     case CloseCode.FAILED_TO_DECODE_PAYLOAD:
                     case CloseCode.NOT_AUTHENTICATED:
-                    case CloseCode.AUTHENTICATION_FAILED:
                     case CloseCode.ALREADY_AUTHENTICATED:
-                    case CloseCode.SESSION_NO_LONGER_VALID:
                     case CloseCode.SESSION_TIMEOUT:
-                    case CloseCode.SERVER_NOT_FOUND:
                     case CloseCode.UNKNOWN_PROTOCOL:
                     case CloseCode.VOICE_SERVER_CRASHED:
                     case CloseCode.UNKNOWN_ENCRYPTION_MODE:
                     case CloseCode.BAD_REQUEST:
-                    case CloseCode.RATE_LIMIT_EXCEEDED:
                     case CloseCode.KOE_RECONNECT:
                         connectFuture = new CompletableFuture<>();
                         start();
@@ -171,26 +167,11 @@ public abstract class AbstractMediaGatewayConnection implements MediaGatewayConn
         sendRaw(new JsonObject().add("op", op).add("d", d));
     }
 
-    public void sendBinaryInternalPayload(char op, ByteBuf buffer) {
-        var frame = channel.alloc().buffer(1 + buffer.readableBytes());
-        frame.writeByte(op);
-        frame.writeBytes(buffer);
-        sendRaw(frame);
-        buffer.release();
-    }
-
     protected void sendRaw(JsonObject object) {
         if (channel != null && channel.isOpen()) {
             var data = object.toString();
-            logger.trace("<-T {}", data);
+            logger.trace("<- {}", data);
             channel.writeAndFlush(new TextWebSocketFrame(data));
-        }
-    }
-
-    protected void sendRaw(ByteBuf buffer) {
-        if (channel != null && channel.isOpen()) {
-            logger.trace("<-B {}", buffer);
-            channel.writeAndFlush(new BinaryWebSocketFrame(buffer));
         }
     }
 
@@ -248,14 +229,9 @@ public abstract class AbstractMediaGatewayConnection implements MediaGatewayConn
             if (msg instanceof TextWebSocketFrame) {
                 var frame = (TextWebSocketFrame) msg;
                 var object = JsonParser.object().from(frame.content());
-                logger.trace("->T {}", object);
+                logger.trace("-> {}", object);
                 frame.release();
                 handlePayload(object);
-            } else if (msg instanceof BinaryWebSocketFrame) {
-                var frame = (BinaryWebSocketFrame) msg;
-                logger.trace("->B {}", frame.content());
-                handleBinaryPayload(frame.content());
-                frame.release();
             } else if (msg instanceof CloseWebSocketFrame) {
                 var frame = (CloseWebSocketFrame) msg;
                 if (logger.isDebugEnabled()) {
@@ -289,5 +265,13 @@ public abstract class AbstractMediaGatewayConnection implements MediaGatewayConn
             pipeline.addLast("aggregator", new HttpObjectAggregator(65536));
             pipeline.addLast("handler", new WebSocketClientHandler());
         }
+    }
+
+    protected static String stripPort80(String endpoint) {
+        if (endpoint.endsWith(":80")) {
+            return endpoint.substring(0, endpoint.length() - 3);
+        }
+
+        return endpoint;
     }
 }

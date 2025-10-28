@@ -11,9 +11,6 @@ import com.sedmelluq.discord.lavaplayer.track.AudioPlaylist;
 import com.sedmelluq.discord.lavaplayer.track.AudioTrack;
 import com.sedmelluq.discord.lavaplayer.track.playback.MutableAudioFrame;
 import dev.lavalink.youtube.YoutubeAudioSourceManager;
-import dev.lavalink.youtube.clients.AndroidMusic;
-import dev.lavalink.youtube.clients.AndroidTestsuite;
-import dev.lavalink.youtube.clients.WebEmbedded;
 import io.netty.buffer.ByteBuf;
 import moe.kyokobot.koe.*;
 import moe.kyokobot.koe.media.OpusAudioFrameProvider;
@@ -21,14 +18,13 @@ import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
 import net.dv8tion.jda.api.Permission;
 import net.dv8tion.jda.api.entities.Guild;
-import net.dv8tion.jda.api.entities.channel.concrete.TextChannel;
 import net.dv8tion.jda.api.entities.channel.middleman.AudioChannel;
+import net.dv8tion.jda.api.entities.channel.middleman.GuildMessageChannel;
 import net.dv8tion.jda.api.events.message.MessageReceivedEvent;
 import net.dv8tion.jda.api.events.session.ReadyEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import net.dv8tion.jda.api.hooks.VoiceDispatchInterceptor;
 import net.dv8tion.jda.api.requests.GatewayIntent;
-import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,7 +50,7 @@ public class TestBot extends ListenerAdapter implements VoiceDispatchInterceptor
     private Koe koe;
     private KoeClient koeClient;
     private AudioPlayerManager playerManager;
-    private final Map<Guild, AudioPlayer> playerMap = new ConcurrentHashMap<>();
+    private Map<Guild, AudioPlayer> playerMap = new ConcurrentHashMap<>();
 
     public TestBot(String token) {
         this.token = token;
@@ -70,8 +66,7 @@ public class TestBot extends ListenerAdapter implements VoiceDispatchInterceptor
     public void stop() {
         try {
             logger.info("Shutting down...");
-            if (koeClient != null)
-                koeClient.close();
+            koeClient.close();
             Thread.sleep(250);
             jda.shutdownNow();
             Thread.sleep(500);
@@ -94,14 +89,14 @@ public class TestBot extends ListenerAdapter implements VoiceDispatchInterceptor
 
     public AudioPlayerManager createAudioPlayerManager() {
         var manager = new DefaultAudioPlayerManager();
-        manager.registerSourceManager(new YoutubeAudioSourceManager(new AndroidMusic(), new AndroidTestsuite(), new WebEmbedded()));
+        manager.registerSourceManager(new YoutubeAudioSourceManager());
         manager.registerSourceManager(SoundCloudAudioSourceManager.createDefault());
         manager.registerSourceManager(new HttpAudioSourceManager());
         return manager;
     }
 
     @Override
-    public void onReady(@NotNull ReadyEvent event) {
+    public void onReady(ReadyEvent event) {
         koeClient = koe.newClient(jda.getSelfUser().getIdLong());
     }
 
@@ -119,7 +114,7 @@ public class TestBot extends ListenerAdapter implements VoiceDispatchInterceptor
 
     @Override
     public boolean onVoiceStateUpdate(VoiceStateUpdate voiceStateUpdate) {
-        if (voiceStateUpdate.getVoiceState().getIdLong() == jda.getSelfUser().getIdLong() && voiceStateUpdate.getChannel() == null) {
+        if (voiceStateUpdate.getVoiceState().getIdLong() == jda.getSelfUser().getIdLong() && voiceStateUpdate.getChannel().getIdLong() == 0) {
             koeClient.destroyConnection(voiceStateUpdate.getGuildIdLong());
         }
         return true;
@@ -161,7 +156,7 @@ public class TestBot extends ListenerAdapter implements VoiceDispatchInterceptor
                 event.getChannel().sendMessage("Joined channel `" + channel.getName() + "`!").queue();
             }
 
-            resolve(event.getGuild(), event.getChannel().asTextChannel(), content.substring(6));
+            resolve(event.getGuild(), event.getChannel().asGuildMessageChannel(), content.substring(6));
             return;
         }
 
@@ -174,7 +169,7 @@ public class TestBot extends ListenerAdapter implements VoiceDispatchInterceptor
         jda.getDirectAudioController().connect(channel);
     }
 
-    private void resolve(Guild guild, TextChannel channel, String args) {
+    private void resolve(Guild guild, GuildMessageChannel channel, String args) {
         var player = playerMap.computeIfAbsent(guild, n -> playerManager.createPlayer());
 
         playerManager.loadItem(args, new AudioLoadResultHandler() {
