@@ -166,7 +166,6 @@ public class MediaGatewayV8Connection extends AbstractMediaGatewayConnection {
         }
     }
 
-    @Override
     protected void handleBinaryPayload(ByteBuf buffer) {
         sequence = buffer.readUnsignedShort();
 
