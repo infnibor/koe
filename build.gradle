@@ -33,7 +33,7 @@ subprojects {
     apply plugin: 'maven-publish'
     apply plugin: 'java-library'
 
-    group = 'moe.kyokobot.koe'
+    group = 'moe.infnibor.koe'
 
     if (project.hasProperty('version')) {
         // Used by JitPack
@@ -51,7 +51,7 @@ subprojects {
         mavenLocal()
 
         mavenCentral()
-        maven { url "https://maven.lavalink.dev/releases" }
+        maven { url "https://maven.pcreators.pl/releases" }
         maven { url "https://jitpack.io/" }
     }
 
